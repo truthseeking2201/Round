@@ -1,4 +1,4 @@
-# Round — Circle Contract Spec v1.2.1 (Critical Fix Pack)
+# MoneyCircle — Circle Contract Spec v1.2.1 (Critical Fix Pack)
 
 Execution plan (scope + gates): `MASTER_PLAN.md`  
 Implementation guide: `docs/BUILD_GUIDE.md`

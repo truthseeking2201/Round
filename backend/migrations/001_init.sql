@@ -1,4 +1,4 @@
--- MoneyCircle (v1.2.1) — Supabase/Postgres schema (MVP)
+-- Round (v1.2.1) — Supabase/Postgres schema (MVP)
 -- Source of truth: docs/BUILD_GUIDE.md (Part 2 — Backend)
 -- Notes:
 -- - DB is a mirror for UX; on-chain is truth.

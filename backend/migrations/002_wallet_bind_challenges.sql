@@ -1,4 +1,4 @@
--- MoneyCircle (v1.2.1) — wallet bind challenges (TonConnect signData)
+-- Round (v1.2.1) — wallet bind challenges (TonConnect signData)
 -- Source of truth: docs/BUILD_GUIDE.md (POST /wallet/bind_challenge, /wallet/bind_confirm)
 
 create table if not exists public.wallet_bind_challenges (

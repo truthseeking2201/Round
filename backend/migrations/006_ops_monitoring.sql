@@ -1,4 +1,4 @@
--- MoneyCircle (v1.2.1) — ops monitoring + notifications extensions (MVP)
+-- Round (v1.2.1) — ops monitoring + notifications extensions (MVP)
 -- Adds:
 -- - circles: last indexer attempt/success/error fields
 -- - notifications_queue.kind: add 'ops_alert' for founder DM alerts (optional)

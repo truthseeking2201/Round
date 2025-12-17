@@ -10,6 +10,10 @@ export function describeError(err: ApiError): HumanError {
 
   // Prefer explicit, user-facing copy. Keep it short and non-technical.
   switch (code) {
+    case "AUTH_REQUIRED":
+    case "AUTH_INVALID":
+      return { title: "Session expired", description: "Please reopen the mini app in Telegram or tap Retry." };
+
     case "TG_GROUP_REQUIRED":
       return { title: "Open in a group", description: "Open the mini app inside the MoneyCircle Telegram group." };
     case "TG_NOT_IN_GROUP":
@@ -17,6 +21,8 @@ export function describeError(err: ApiError): HumanError {
       return { title: "Not in group", description: "You must be a member of the Telegram group to continue." };
     case "TG_BANNED":
       return { title: "Access blocked", description: "Your account is not allowed in this group." };
+    case "BOT_NOT_IN_GROUP":
+      return { title: "Bot missing", description: "Add the MoneyCircle bot to this group and try again." };
     case "CAP_EXCEEDED":
       return { title: "Circle cap exceeded", description: "This circle exceeds the current cap. Reduce N or contribution." };
 
@@ -24,8 +30,12 @@ export function describeError(err: ApiError): HumanError {
       return { title: "Circle is locked", description: "This circle is no longer accepting new members." };
     case "CIRCLE_NOT_FOUND":
       return { title: "Circle not found", description: "This circle does not exist or is not accessible." };
+    case "NOT_JOINED":
+      return { title: "Join required", description: "Join this circle first, then retry." };
     case "FORBIDDEN":
       return { title: "Forbidden", description: "You do not have permission to perform this action." };
+    case "SERVER_MISCONFIGURED":
+      return { title: "Server unavailable", description: "The server is not configured correctly. Please try again later." };
 
     case "RULES_NOT_ACCEPTED":
     case "RULES_SIGNATURE_REQUIRED":
@@ -46,6 +56,8 @@ export function describeError(err: ApiError): HumanError {
       return { title: "Deposit too small", description: "This deposit is below the minimum and would be ignored by the contract." };
     case "NOT_ONCHAIN_MEMBER":
       return { title: "Join on-chain first", description: "Please complete the on-chain join before depositing." };
+    case "JETTON_GET_WALLET_FAILED":
+      return { title: "Jetton lookup failed", description: "Unable to find your USDT Jetton wallet. Please retry in a minute." };
 
     case "EMERGENCY_STOP":
       return { title: "Emergency stop", description: "Operations are frozen by rules. Withdraw is still available." };

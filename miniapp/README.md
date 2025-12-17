@@ -1,4 +1,4 @@
-# Round Mini App (React + Vite + TS)
+# MoneyCircle Mini App (React + Vite + TS)
 
 Source of truth:
 - UI spec: `docs/UI_SPEC.md`

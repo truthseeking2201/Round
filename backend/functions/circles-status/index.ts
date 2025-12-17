@@ -31,7 +31,7 @@ Deno.serve(async (req) => {
   const circleRes = await supabase
     .from("circles")
     .select(
-      "circle_id,group_chat_id,name,status,contract_address,jetton_master,n_members,contribution_units,total_cycles,interval_sec,grace_sec,take_rate_bps,collateral_rate_bps,max_discount_bps,vesting_bps_cycle1,early_lock_rate_bps_cycle1,commit_duration_sec,reveal_duration_sec,max_pot_cap_units,min_deposit_units,current_cycle_index,onchain_phase,onchain_funded_count,onchain_jetton_wallet,onchain_due_at,onchain_grace_end_at,onchain_commit_end_at,onchain_reveal_end_at"
+      "circle_id,group_chat_id,name,status,contract_address,jetton_master,n_members,contribution_units,total_cycles,interval_sec,grace_sec,take_rate_bps,collateral_rate_bps,max_discount_bps,vesting_bps_cycle1,early_lock_rate_bps_cycle1,commit_duration_sec,reveal_duration_sec,max_pot_cap_units,min_deposit_units,current_cycle_index,onchain_phase,onchain_funded_count,onchain_jetton_wallet,onchain_due_at,onchain_grace_end_at,onchain_commit_end_at,onchain_reveal_end_at,last_indexer_attempt_at,last_indexed_at,last_indexer_error"
     )
     .eq("circle_id", circleId)
     .single();

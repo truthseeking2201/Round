@@ -1,4 +1,4 @@
-# Round — CircleContract (v1.2.1 Hardened)
+# MoneyCircle — CircleContract (v1.2.1 Hardened)
 
 Source of truth:
 - Execution plan: `MASTER_PLAN.md`

@@ -1,4 +1,4 @@
-# Round Telegram Bot (MVP)
+# MoneyCircle Telegram Bot (MVP)
 
 Source of truth:
 - `docs/BUILD_GUIDE.md` (Part 3 — Bot)
@@ -27,4 +27,3 @@ npm run dev
 Notes:
 - This bot intentionally avoids @mentions (anti-harassment default).
 - Scheduled reminders are sent by backend cron (`backend/functions/notify-scheduler` + `backend/functions/bot-sender`).
-

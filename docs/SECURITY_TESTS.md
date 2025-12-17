@@ -1,4 +1,4 @@
-# Round — Attack Test Pack (v1.2.1)
+# MoneyCircle — Attack Test Pack (v1.2.1)
 
 Execution plan (scope + gates): `MASTER_PLAN.md`  
 Implementation guide: `docs/BUILD_GUIDE.md`

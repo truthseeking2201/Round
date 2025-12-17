@@ -1,4 +1,4 @@
-# Round
+# MoneyCircle
 
 - Master plan (execution + gates): `MASTER_PLAN.md`
 - Source of truth (implementation guide): `docs/BUILD_GUIDE.md`

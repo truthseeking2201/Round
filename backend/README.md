@@ -1,4 +1,4 @@
-# Round Backend (Supabase) — v1.2.1
+# MoneyCircle Backend (Supabase) — v1.2.1
 
 Source of truth:
 - Execution plan: `MASTER_PLAN.md` (M2 — Backend)

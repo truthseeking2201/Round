@@ -68,6 +68,8 @@ export type CirclesListResponse = {
     onchain_grace_end_at?: string | null;
     onchain_commit_end_at?: string | null;
     onchain_reveal_end_at?: string | null;
+    last_indexed_at?: string | null;
+    last_indexer_error?: string | null;
     created_at: string;
   }>;
 };
@@ -105,6 +107,9 @@ export type CircleRecord = {
   onchain_grace_end_at: string | null;
   onchain_commit_end_at: string | null;
   onchain_reveal_end_at: string | null;
+  last_indexer_attempt_at: string | null;
+  last_indexed_at: string | null;
+  last_indexer_error: string | null;
 };
 
 export type CircleMemberRecord = {

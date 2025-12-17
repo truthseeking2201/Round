@@ -1,4 +1,5 @@
 import { TonConnectButton, useTonConnectUI, useTonWallet } from "@tonconnect/ui-react";
+import { Address } from "@ton/core";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
@@ -8,11 +9,18 @@ import { useAuth } from "../auth/useAuth";
 import { formatUsdt } from "../lib/usdt";
 import { Page } from "../components/layout/Page";
 import { FundsBanner } from "../components/mc/FundsBanner";
+import { IndexerLagBanner } from "../components/mc/IndexerLagBanner";
 import { OnChainScheduleCard } from "../components/mc/OnChainScheduleCard";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardDescription, CardTitle } from "../components/ui/Card";
-import { buildInitJettonWalletPayload, toNano } from "../lib/tonPayloads";
+import {
+  buildFinalizeAuctionPayload,
+  buildInitJettonWalletPayload,
+  buildTerminateDefaultPayload,
+  buildTriggerDebitAllPayload,
+  toNano
+} from "../lib/tonPayloads";
 import { describeError } from "../lib/errors";
 
 function displayStatus(status: string): string {
@@ -46,6 +54,7 @@ export function CirclePage() {
   const [contractAddressInput, setContractAddressInput] = useState<string>("");
   const [collateralUsdt, setCollateralUsdt] = useState<string>("0");
   const [prefundUsdt, setPrefundUsdt] = useState<string>("0");
+  const [nowSec, setNowSec] = useState<number>(() => Math.floor(Date.now() / 1000));
 
   const canLoad = auth.status === "ready" && circleId.length > 0;
   const humanError = error ? describeError(error) : null;
@@ -69,6 +78,11 @@ export function CirclePage() {
     void refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canLoad, circleId]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNowSec(Math.floor(Date.now() / 1000)), 1000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const circle = data?.circle ?? null;
   const member = data?.member ?? null;
@@ -96,7 +110,7 @@ export function CirclePage() {
     const status = String(circle.status);
     const withdrawable = toBigIntSafe(member?.withdrawable);
     const isOnchainJoined = String(member?.join_status ?? "") === "onchain_joined";
-    const hasDeposits = isOnchainJoined && toBigIntSafe(member?.collateral) + toBigIntSafe(member?.prefund) > 0n;
+    const deposits = isOnchainJoined ? toBigIntSafe(member?.collateral) + toBigIntSafe(member?.prefund) : 0n;
 
     const commitEnd = circle.onchain_commit_end_at ? Math.floor(Date.parse(String(circle.onchain_commit_end_at)) / 1000) : 0;
     const revealEnd = circle.onchain_reveal_end_at ? Math.floor(Date.parse(String(circle.onchain_reveal_end_at)) / 1000) : 0;
@@ -105,7 +119,7 @@ export function CirclePage() {
 
     if (status === "Recruiting") {
       if (!isOnchainJoined) out.push({ label: "Join Circle", to: `/circle/${circleId}/join` });
-      if (hasDeposits) out.push({ label: "Exit & Refund", to: `/circle/${circleId}/withdraw` });
+      if (isOnchainJoined) out.push({ label: deposits > 0n ? "Exit & Refund" : "Exit Circle", to: `/circle/${circleId}/withdraw` });
       return out;
     }
 
@@ -124,10 +138,58 @@ export function CirclePage() {
     return out;
   }, [circle, circleId, member]);
 
+  const connectedWalletAddress = wallet?.account?.address ? String(wallet.account.address) : null;
+  const boundWalletAddress = member?.wallet_address ? String(member.wallet_address) : null;
+  const walletMatchesMember = useMemo(() => {
+    if (!connectedWalletAddress || !boundWalletAddress) return true;
+    try {
+      return Address.parse(connectedWalletAddress).equals(Address.parse(boundWalletAddress));
+    } catch {
+      return true;
+    }
+  }, [connectedWalletAddress, boundWalletAddress]);
+
+  const dueAtSec = circle?.onchain_due_at ? Math.floor(Date.parse(String(circle.onchain_due_at)) / 1000) : null;
+  const graceEndSec = circle?.onchain_grace_end_at ? Math.floor(Date.parse(String(circle.onchain_grace_end_at)) / 1000) : null;
+  const revealEndSec = circle?.onchain_reveal_end_at ? Math.floor(Date.parse(String(circle.onchain_reveal_end_at)) / 1000) : null;
+  const phaseCode = circle?.onchain_phase ?? null;
+
+  const canRunDebit = Boolean(
+    circle?.contract_address &&
+      dueAtSec &&
+      graceEndSec &&
+      Number.isFinite(dueAtSec) &&
+      Number.isFinite(graceEndSec) &&
+      nowSec >= dueAtSec &&
+      nowSec < graceEndSec &&
+      (phaseCode === 0 || phaseCode == null) &&
+      !circle.onchain_commit_end_at
+  );
+
+  const canFinalizeAuction = Boolean(
+    circle?.contract_address &&
+      revealEndSec &&
+      Number.isFinite(revealEndSec) &&
+      nowSec >= revealEndSec &&
+      (phaseCode === 1 || phaseCode === 2 || phaseCode == null) &&
+      String(circle.status) === "Active"
+  );
+
+  const canTerminateDefault = Boolean(
+    circle?.contract_address &&
+      graceEndSec &&
+      Number.isFinite(graceEndSec) &&
+      nowSec >= graceEndSec &&
+      !circle.onchain_commit_end_at &&
+      (phaseCode === 3 || phaseCode === 0 || phaseCode == null) &&
+      (String(circle.status) === "Locked" || String(circle.status) === "Active")
+  );
+
   return (
     <Page title={circle?.name ?? "Circle"}>
       <div className="space-y-4">
         <FundsBanner />
+        <IndexerLagBanner circle={circle} />
 
         <div className="flex items-center justify-between gap-3">
           <Link to="/" className="text-sm text-slate-300 hover:text-slate-50">
@@ -290,6 +352,121 @@ export function CirclePage() {
                   </Button>
                 </div>
 
+                <div className="mt-4 rounded-xl bg-slate-950/40 p-3 text-xs text-slate-400 ring-1 ring-slate-800">
+                  Liveness: if backend/cron is down, members can still progress the circle by triggering on-chain actions (debit/finalize/terminate) directly.
+                </div>
+
+                <div className="mt-4 grid gap-2">
+                  <Button
+                    variant="secondary"
+                    onClick={async () => {
+                      if (!circle?.contract_address) return;
+                      if (!wallet) {
+                        setError({ code: "WALLET_NOT_CONNECTED", message: "Connect wallet first." });
+                        return;
+                      }
+                      if (!window.confirm("Run debit for all members? This may fail outside the due/grace window.")) return;
+                      setBusy("Running debit…");
+                      setError(null);
+                      try {
+                        await tonConnectUI.sendTransaction({
+                          validUntil: Math.floor(Date.now() / 1000) + 5 * 60,
+                          messages: [
+                            {
+                              address: String(circle.contract_address),
+                              amount: toNano("0.05"),
+                              payload: buildTriggerDebitAllPayload(),
+                            },
+                          ],
+                        });
+                      } catch (e: unknown) {
+                        const err = e as { message?: string };
+                        setError({ code: "TX_FAILED", message: err?.message ?? "Transaction failed" });
+                      } finally {
+                        setBusy(null);
+                      }
+                    }}
+                    disabled={!!busy || !canRunDebit}
+                  >
+                    Run Debit (Funding)
+                  </Button>
+
+                  <Button
+                    variant="secondary"
+                    onClick={async () => {
+                      if (!circle?.contract_address) return;
+                      if (!wallet) {
+                        setError({ code: "WALLET_NOT_CONNECTED", message: "Connect wallet first." });
+                        return;
+                      }
+                      if (!window.confirm("Finalize auction now? This may fail before reveal end.")) return;
+                      setBusy("Finalizing…");
+                      setError(null);
+                      try {
+                        await tonConnectUI.sendTransaction({
+                          validUntil: Math.floor(Date.now() / 1000) + 5 * 60,
+                          messages: [
+                            {
+                              address: String(circle.contract_address),
+                              amount: toNano("0.05"),
+                              payload: buildFinalizeAuctionPayload(),
+                            },
+                          ],
+                        });
+                      } catch (e: unknown) {
+                        const err = e as { message?: string };
+                        setError({ code: "TX_FAILED", message: err?.message ?? "Transaction failed" });
+                      } finally {
+                        setBusy(null);
+                        await refresh();
+                      }
+                    }}
+                    disabled={!!busy || !canFinalizeAuction}
+                  >
+                    Finalize Auction
+                  </Button>
+
+                  <Button
+                    variant="danger"
+                    onClick={async () => {
+                      if (!circle?.contract_address) return;
+                      if (!wallet) {
+                        setError({ code: "WALLET_NOT_CONNECTED", message: "Connect wallet first." });
+                        return;
+                      }
+                      if (
+                        !window.confirm(
+                          "Terminate for default? This is irreversible and follows contract rules (refund + seize + distribute)."
+                        )
+                      )
+                        return;
+                      setBusy("Terminating…");
+                      setError(null);
+                      try {
+                        await tonConnectUI.sendTransaction({
+                          validUntil: Math.floor(Date.now() / 1000) + 5 * 60,
+                          messages: [
+                            {
+                              address: String(circle.contract_address),
+                              amount: toNano("0.05"),
+                              payload: buildTerminateDefaultPayload(),
+                            },
+                          ],
+                        });
+                      } catch (e: unknown) {
+                        const err = e as { message?: string };
+                        setError({ code: "TX_FAILED", message: err?.message ?? "Transaction failed" });
+                      } finally {
+                        setBusy(null);
+                        await refresh();
+                      }
+                    }}
+                    disabled={!!busy || !canTerminateDefault}
+                  >
+                    Terminate Default
+                  </Button>
+                </div>
+
                 <div className="mt-5 text-xs font-semibold uppercase tracking-wide text-slate-400">Deposits</div>
                 <div className="mt-2 text-sm text-slate-300">
                   Required Collateral: {formatUsdt(collateralRequiredUnits)} USDT · Recommended Prefund: ≥ {formatUsdt(contributionUnits)} USDT
@@ -312,12 +489,12 @@ export function CirclePage() {
                           setError({ code: "WALLET_NOT_CONNECTED", message: "Connect wallet first." });
                           return;
                         }
-                        if (!circle.onchain_jetton_wallet) {
-                          setError({ code: "JETTON_WALLET_NOT_INITIALIZED", message: "Run INIT first (contract Jetton wallet not set yet)." });
+                        if (!walletMatchesMember) {
+                          setError({ code: "WALLET_MISMATCH", message: "Switch to your bound wallet and retry." });
                           return;
                         }
-                        if (String(member?.join_status ?? "") !== "onchain_joined") {
-                          setError({ code: "NOT_ONCHAIN_MEMBER", message: "Join on-chain first before depositing." });
+                        if (!circle.onchain_jetton_wallet) {
+                          setError({ code: "JETTON_WALLET_NOT_INITIALIZED", message: "Run INIT first (contract Jetton wallet not set yet)." });
                           return;
                         }
                         setBusy("Preparing collateral deposit…");
@@ -359,12 +536,12 @@ export function CirclePage() {
                           setError({ code: "WALLET_NOT_CONNECTED", message: "Connect wallet first." });
                           return;
                         }
-                        if (!circle.onchain_jetton_wallet) {
-                          setError({ code: "JETTON_WALLET_NOT_INITIALIZED", message: "Run INIT first (contract Jetton wallet not set yet)." });
+                        if (!walletMatchesMember) {
+                          setError({ code: "WALLET_MISMATCH", message: "Switch to your bound wallet and retry." });
                           return;
                         }
-                        if (String(member?.join_status ?? "") !== "onchain_joined") {
-                          setError({ code: "NOT_ONCHAIN_MEMBER", message: "Join on-chain first before depositing." });
+                        if (!circle.onchain_jetton_wallet) {
+                          setError({ code: "JETTON_WALLET_NOT_INITIALIZED", message: "Run INIT first (contract Jetton wallet not set yet)." });
                           return;
                         }
                         setBusy("Preparing prefund deposit…");

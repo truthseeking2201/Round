@@ -1,4 +1,4 @@
-# Round — Mini App UI Specification (English)
+# MoneyCircle — Mini App UI Specification (English)
 
 Execution plan (scope + gates): `MASTER_PLAN.md`
 
@@ -39,7 +39,7 @@ Tech:
 ## 4) Screen-by-screen Specification (English)
 
 ### S0 — Group Landing
-Title: `Round`
+Title: `MoneyCircle`
 Sections:
 - `Active Circles` (Open)
 - `Recruiting Circles` (Join)

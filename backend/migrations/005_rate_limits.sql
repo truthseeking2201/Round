@@ -1,4 +1,4 @@
--- MoneyCircle (v1.2.1) — rate limiting primitives (MVP)
+-- Round (v1.2.1) — rate limiting primitives (MVP)
 -- Goal: protect critical endpoints from abuse without inventing product behavior.
 -- Implementation: fixed-window counters keyed by (key, action, window_start).
 

@@ -1,4 +1,4 @@
-# Round – Engineering Build Guide
+# MoneyCircle – Engineering Build Guide
 Version: v1.2.1 (Hardened + Logic Bomb Fix Pack)
 Audience: Engineering Team / Solo Founder
 Goal: Implement 3 components in order:
@@ -902,7 +902,7 @@ Tech:
 ## 4) Screen-by-screen Specification (English)
 
 ### S0 — Group Landing
-Title: `Round`
+Title: `MoneyCircle`
 Sections:
 - `Active Circles` (Open)
 - `Recruiting Circles` (Join)

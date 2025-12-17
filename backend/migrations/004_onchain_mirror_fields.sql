@@ -1,4 +1,4 @@
--- MoneyCircle (v1.2.1) — add extra on-chain mirror fields required by the Mini App
+-- Round (v1.2.1) — add extra on-chain mirror fields required by the Mini App
 -- Source of truth: docs/UI_SPEC.md + docs/BUILD_GUIDE.md (mirror fields are for UX only; chain remains truth)
 
 alter table public.circles

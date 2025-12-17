@@ -1,0 +1,31 @@
+name: ci
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install root deps
+        run: npm ci
+
+      - name: Contract + tests
+        run: npm test
+
+      - name: Mini App build
+        run: cd miniapp && npm ci && npm run build
+
+      - name: Bot syntax check
+        run: node --check bot/index.mjs
+

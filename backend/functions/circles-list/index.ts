@@ -29,7 +29,7 @@ Deno.serve(async (req) => {
   const res = await supabase
     .from("circles")
     .select(
-      "circle_id,name,status,contract_address,n_members,contribution_units,current_cycle_index,onchain_due_at,onchain_grace_end_at,onchain_commit_end_at,onchain_reveal_end_at,created_at"
+      "circle_id,name,status,contract_address,n_members,contribution_units,current_cycle_index,onchain_due_at,onchain_grace_end_at,onchain_commit_end_at,onchain_reveal_end_at,last_indexed_at,last_indexer_error,created_at"
     )
     .eq("group_chat_id", session.group_chat_id)
     .order("created_at", { ascending: false });

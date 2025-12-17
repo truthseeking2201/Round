@@ -3,6 +3,15 @@ import { createServiceClient } from "../_shared/supabase.ts";
 import { runGetMethodWithRetry } from "../_shared/tonapi.ts";
 import { editMessageText, sendMessage } from "../_shared/telegram-api.ts";
 import { readAddressFromStackRecord, readNumAt, readOptionalAddressFromStackRecord, unwrapTuple } from "../_shared/tvm.ts";
+import { Address } from "npm:@ton/core@0.60.0";
+
+function addressKey(input: string): string | null {
+  try {
+    return Address.parse(input).toRawString();
+  } catch {
+    return null;
+  }
+}
 
 function statusToText(code: number): string | null {
   switch (code) {
@@ -379,14 +388,22 @@ Deno.serve(async (req) => {
         .not("wallet_address", "is", null);
       if (membersDb.error) throw new Error("DB_MEMBERS_FAILED");
 
-      const walletToRows = new Map<string, { telegram_user_id: number; join_status: string }[]>();
-      for (const m of membersDb.data ?? []) {
-        const w = String(m.wallet_address);
-        if (!walletToRows.has(w)) walletToRows.set(w, []);
-        walletToRows.get(w)!.push({
+      const dbRows = (membersDb.data ?? []).map((m) => {
+        const wallet = String(m.wallet_address ?? "");
+        return {
           telegram_user_id: Number(m.telegram_user_id),
           join_status: String(m.join_status),
-        });
+          wallet_address: wallet,
+          wallet_key: addressKey(wallet),
+        };
+      });
+
+      // Normalize by raw address so bounceable/testOnly encodings won't break matching.
+      const walletToRows = new Map<string, { telegram_user_id: number; join_status: string }[]>();
+      for (const r of dbRows) {
+        if (!r.wallet_key) continue;
+        if (!walletToRows.has(r.wallet_key)) walletToRows.set(r.wallet_key, []);
+        walletToRows.get(r.wallet_key)!.push({ telegram_user_id: r.telegram_user_id, join_status: r.join_status });
       }
 
       // get_members_count + member_list
@@ -396,7 +413,8 @@ Deno.serve(async (req) => {
       const count = Number(readNumAt(countT, 0));
 
       // Track wallets that are on-chain for marking join_tickets.used
-      const onchainWallets: string[] = [];
+      const onchainWalletKeys: string[] = [];
+      const onchainUserIds = new Set<number>();
 
       for (let i = 0; i < count; i++) {
         const addrExec = await runGetMethodWithRetry({
@@ -407,11 +425,13 @@ Deno.serve(async (req) => {
         });
         if (!addrExec || !addrExec.success) continue;
         const addrT = unwrapTuple(addrExec.stack);
-        const walletAddr = readAddressFromStackRecord(addrT[0]).toString();
+        const wallet = readAddressFromStackRecord(addrT[0]);
+        const walletAddr = wallet.toString();
+        const walletKey = wallet.toRawString();
 
-        onchainWallets.push(walletAddr);
+        onchainWalletKeys.push(walletKey);
 
-        const rows = walletToRows.get(walletAddr);
+        const rows = walletToRows.get(walletKey);
         if (!rows || rows.length === 0) continue;
 
         const viewExec = await runGetMethodWithRetry({
@@ -436,13 +456,12 @@ Deno.serve(async (req) => {
 
         // Update all matching rows (should be 1 row in MVP)
         for (const r of rows) {
-          const wasTicketIssued = r.join_status === "ticket_issued" || r.join_status === "wallet_verified";
-          const joinStatus = wasTicketIssued ? "onchain_joined" : r.join_status;
+          onchainUserIds.add(r.telegram_user_id);
 
           await supabase
             .from("circle_members")
             .update({
-              join_status: joinStatus,
+              join_status: "onchain_joined",
               has_won: hasWon,
               collateral,
               prefund,
@@ -458,13 +477,38 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Mark join_tickets as used for all on-chain wallets
-      if (onchainWallets.length > 0) {
+      // Downgrade stale rows that claim "onchain_joined" but are not in member_list anymore.
+      // This prevents backend from allowing deposits to wallets the contract will ignore.
+      const onchainSet = new Set(onchainWalletKeys);
+      for (const r of dbRows) {
+        if (r.join_status !== "onchain_joined") continue;
+        if (!r.wallet_key) continue;
+        if (onchainSet.has(r.wallet_key)) continue;
+        await supabase
+          .from("circle_members")
+          .update({
+            join_status: "exited",
+            has_won: false,
+            collateral: "0",
+            prefund: "0",
+            credit: "0",
+            vesting_locked: "0",
+            vesting_released: "0",
+            future_locked: "0",
+            withdrawable: "0",
+            due_remaining: "0",
+          })
+          .eq("circle_id", circle.circle_id)
+          .eq("telegram_user_id", r.telegram_user_id);
+      }
+
+      // Mark join_tickets as used for all users that are on-chain.
+      if (onchainUserIds.size > 0) {
         await supabase
           .from("join_tickets")
           .update({ used: true })
           .eq("circle_id", circle.circle_id)
-          .in("wallet_address", onchainWallets)
+          .in("telegram_user_id", Array.from(onchainUserIds))
           .eq("used", false);
       }
 

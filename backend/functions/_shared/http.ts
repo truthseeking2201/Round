@@ -2,35 +2,60 @@
 const MAX_BODY_SIZE = 1024 * 1024;
 
 // Allowed origins for CORS (set via env or defaults)
+function normalizeOrigin(input: string): string | null {
+  const v = input.trim();
+  if (!v) return null;
+  try {
+    const u = new URL(v);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    return u.origin.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
 function getAllowedOrigins(): string[] {
   const envOrigins = Deno.env.get("CORS_ALLOWED_ORIGINS");
   if (envOrigins) {
-    return envOrigins.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+    const out: string[] = [];
+    for (const raw of envOrigins.split(",")) {
+      const n = normalizeOrigin(raw);
+      if (n) out.push(n);
+    }
+    return Array.from(new Set(out));
   }
   // Default: Telegram WebApp domains + localhost for dev
-  return [
-    "https://web.telegram.org",
-    "https://t.me",
-    "http://localhost:5173",
-    "http://localhost:3000",
-  ];
+  return Array.from(
+    new Set(
+      [
+        "https://web.telegram.org",
+        "https://t.me",
+        "http://localhost:5173",
+        "http://localhost:3000",
+      ]
+        .map((o) => normalizeOrigin(o))
+        .filter((v): v is string => Boolean(v))
+    )
+  );
 }
 
 export function getCorsHeaders(origin?: string | null): Record<string, string> {
   const allowedOrigins = getAllowedOrigins();
-  const lowerOrigin = (origin ?? "").toLowerCase();
 
   // Check if origin is allowed (or wildcard for dev if CORS_ALLOW_ALL=true)
   const allowAll = Deno.env.get("CORS_ALLOW_ALL") === "true";
-  const isAllowed = allowAll || allowedOrigins.some((o) => lowerOrigin === o || lowerOrigin.startsWith(o));
+  const normalized = origin ? normalizeOrigin(origin) : null;
+  const isAllowed = allowAll || (normalized ? allowedOrigins.includes(normalized) : false);
 
-  const allowOrigin = isAllowed && origin ? origin : allowedOrigins[0] ?? "*";
+  const allowOrigin = isAllowed ? (normalized ?? "*") : allowedOrigins[0] ?? "*";
 
   return {
     "access-control-allow-origin": allowOrigin,
     "access-control-allow-headers": "authorization, content-type",
     "access-control-allow-methods": "GET,POST,OPTIONS",
     "access-control-max-age": "86400",
+    // Important for caches/CDNs when allow-origin is dynamic.
+    vary: "origin",
   };
 }
 

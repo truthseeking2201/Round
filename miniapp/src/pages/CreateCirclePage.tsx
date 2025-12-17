@@ -77,7 +77,7 @@ export function CreateCirclePage() {
         <div style={{ fontWeight: 700, marginBottom: 6 }}>MVP fixed rules</div>
         <div>Discount cap: 5%</div>
         <div>Grace period: 24h</div>
-        <div>Collateral: 7% / 10% / 12%</div>
+        <div>Collateral: fixed by circle rules (v1.2.1)</div>
         <div>Fees: 1% (winner pays)</div>
         <div>Safety lock: enabled for Cycle 1</div>
       </div>

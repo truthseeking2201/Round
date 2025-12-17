@@ -4,7 +4,8 @@ import { errorResponse, jsonResponse, readJson, withCors } from "../_shared/http
 import { requireSession } from "../_shared/auth.ts";
 import { enforceRateLimit } from "../_shared/rate-limit.ts";
 import { createServiceClient } from "../_shared/supabase.ts";
-import { tonapiGetJettonWalletAddress } from "../_shared/tonapi.ts";
+import { runGetMethodWithRetry } from "../_shared/tonapi.ts";
+import { readAddressFromStackRecord, readNumAt, unwrapTuple } from "../_shared/tvm.ts";
 import { parseUsdtToUnits } from "../_shared/usdt.ts";
 
 type DepositIntentRequest = {
@@ -106,14 +107,46 @@ Deno.serve(async (req) => {
   if (memberRes.error || !memberRes.data) return errorResponse("NOT_JOINED", 400, undefined, origin);
   if (memberRes.data.join_status === "exited") return errorResponse("NOT_JOINED", 400, undefined, origin);
   if (!memberRes.data.wallet_address) return errorResponse("WALLET_NOT_VERIFIED", 400, undefined, origin);
-  if (memberRes.data.join_status !== "onchain_joined") return errorResponse("NOT_ONCHAIN_MEMBER", 400, undefined, origin);
 
   const jettonMaster = String(circleRes.data.jetton_master ?? Deno.env.get("USDT_JETTON_MASTER") ?? "");
   if (!jettonMaster) return errorResponse("SERVER_MISCONFIGURED", 500, "Missing USDT_JETTON_MASTER", origin);
 
   const owner = String(memberRes.data.wallet_address);
-  const jettonWallet = await tonapiGetJettonWalletAddress({ owner, jettonMaster });
-  if (!jettonWallet) return errorResponse("JETTON_WALLET_NOT_FOUND", 400, undefined, origin);
+
+  // Safety: DB is only a UX mirror. Verify the wallet is an active on-chain member before generating a deposit payload.
+  // This prevents fund loss if `join_status` is stale (e.g., user exited Recruiting but DB still says onchain_joined).
+  const mvExec = await runGetMethodWithRetry({
+    account: String(circleRes.data.contract_address),
+    method: "get_member",
+    args: [owner],
+    maxRetries: 2,
+  });
+  if (!mvExec || !mvExec.success) return errorResponse("CHAIN_UNAVAILABLE", 502, undefined, origin);
+  const mv = unwrapTuple(mvExec.stack);
+  const active = mv.length >= 1 ? readNumAt(mv, 0) !== 0n : false;
+  if (!active) return errorResponse("NOT_ONCHAIN_MEMBER", 400, undefined, origin);
+
+  // Best-effort: upgrade join_status if chain already shows membership (reduces UX friction under indexer lag).
+  if (memberRes.data.join_status !== "onchain_joined") {
+    await supabase
+      .from("circle_members")
+      .update({ join_status: "onchain_joined" })
+      .eq("circle_id", body.circle_id)
+      .eq("telegram_user_id", session.telegram_user_id);
+  }
+
+  const exec = await runGetMethodWithRetry({ account: jettonMaster, method: "get_wallet_address", args: [owner], maxRetries: 3 });
+  if (!exec || !exec.success) return errorResponse("JETTON_GET_WALLET_FAILED", 502, undefined, origin);
+
+  const tuple = unwrapTuple(exec.stack);
+  if (tuple.length < 1) return errorResponse("JETTON_GET_WALLET_FAILED", 502, "empty stack", origin);
+
+  let jettonWallet: string;
+  try {
+    jettonWallet = readAddressFromStackRecord(tuple[0]).toString();
+  } catch {
+    return errorResponse("JETTON_GET_WALLET_FAILED", 502, "bad address stack", origin);
+  }
 
   const purpose = body.purpose === "collateral" ? PURPOSE_COLLATERAL : PURPOSE_PREFUND;
   const forwardPayload = beginCell().storeUint(DEPOSIT_MAGIC, 32).storeUint(purpose, 8).endCell();

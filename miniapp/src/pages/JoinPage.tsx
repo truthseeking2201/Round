@@ -1,4 +1,5 @@
 import { TonConnectButton, useTonConnectUI, useTonWallet } from "@tonconnect/ui-react";
+import { Address } from "@ton/core";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
@@ -8,6 +9,7 @@ import { useAuth } from "../auth/useAuth";
 import { buildJoinWithTicketPayload, toNano } from "../lib/tonPayloads";
 import { Page } from "../components/layout/Page";
 import { FundsBanner } from "../components/mc/FundsBanner";
+import { IndexerLagBanner } from "../components/mc/IndexerLagBanner";
 import { OnChainScheduleCard } from "../components/mc/OnChainScheduleCard";
 import { Button } from "../components/ui/Button";
 import { Card, CardDescription, CardTitle } from "../components/ui/Card";
@@ -22,7 +24,7 @@ async function sha256Hex(text: string): Promise<string> {
     .join("");
 }
 
-type Step = "join_db" | "accept_rules" | "wallet_verify" | "ticket" | "submit";
+type Step = "join_db" | "accept_rules" | "wallet_verify" | "ticket" | "submit" | "done";
 
 function intervalLabel(intervalSec: unknown): string {
   const s = Number(intervalSec);
@@ -81,7 +83,7 @@ export function JoinPage() {
     if (js === "accepted_rules") return "wallet_verify";
     if (js === "wallet_verified") return "ticket";
     if (js === "ticket_issued") return "submit";
-    if (js === "onchain_joined") return "submit";
+    if (js === "onchain_joined") return "done";
     if (js === "exited") return "join_db";
     return "accept_rules";
   }, [member]);
@@ -204,6 +206,20 @@ export function JoinPage() {
       setError({ code: "TICKET_MISSING", message: "Issue a join ticket first." });
       return;
     }
+    try {
+      const connected = String(wallet.account.address ?? "");
+      if (connected && ticket.wallet) {
+        // Normalize to avoid bounceable formatting differences.
+        const a = Address.parse(connected);
+        const b = Address.parse(ticket.wallet);
+        if (!a.equals(b)) {
+          setError({ code: "WALLET_MISMATCH", message: "Connected wallet does not match the ticket wallet." });
+          return;
+        }
+      }
+    } catch {
+      // If parsing fails, proceed and let the contract reject (safest behavior).
+    }
     setBusy("Sending join tx…");
     setError(null);
     try {
@@ -236,6 +252,7 @@ export function JoinPage() {
     <Page title="Join Circle">
       <div className="space-y-4">
         <FundsBanner />
+        <IndexerLagBanner circle={circle} />
 
         <div className="flex items-center justify-between gap-3">
           <Link to={`/circle/${circleId}`} className="text-sm text-slate-300 hover:text-slate-50">
@@ -333,6 +350,15 @@ export function JoinPage() {
                     Get a new ticket
                   </Button>
                 ) : null}
+              </>
+            ) : null}
+
+            {step === "done" ? (
+              <>
+                <div className="text-sm text-slate-300">You are already joined on-chain.</div>
+                <Button onClick={() => nav(`/circle/${circleId}`)} disabled={!!busy}>
+                  Back to Dashboard
+                </Button>
               </>
             ) : null}
           </div>

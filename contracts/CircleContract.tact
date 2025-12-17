@@ -75,6 +75,7 @@ const ERR_TICKET_EXPIRED: Int = 104;
 const ERR_TICKET_SIG_INVALID: Int = 105;
 const ERR_TICKET_NONCE_USED: Int = 106;
 const ERR_WALLET_MISMATCH: Int = 107;
+const ERR_RECRUITING_BUSY: Int = 108;
 
 const ERR_JETTON_WALLET_NOT_SET: Int = 120;
 const ERR_DEPOSIT_TOO_SMALL: Int = 121;
@@ -220,6 +221,7 @@ contract CircleContract with Deployable {
 
   treasury_owed: Int;
   used_nonces: map<Int, Bool>; // uint256 -> bool
+  recruiting_exit_inflight: Bool;
 
   // Cycle state (current cycle only)
   phase: Int as uint8;
@@ -283,6 +285,7 @@ contract CircleContract with Deployable {
     self.member_list = emptyMap();
     self.members = emptyMap();
     self.used_nonces = emptyMap();
+    self.recruiting_exit_inflight = false;
 
     // Cycle init (uninitialized until lock)
     self.phase = PHASE_FUNDING;
@@ -739,8 +742,14 @@ contract CircleContract with Deployable {
     }
     let qid = msg.loadUint(64);
     let outOpt = self.pending_out.get(qid);
-    if (outOpt != null) {
-      self.pending_out.set(qid, null);
+    if (outOpt == null) {
+      return;
+    }
+    let out = outOpt!!;
+    self.pending_out.set(qid, null);
+
+    if (out.kind == OUT_RECRUITING_EXIT) {
+      self.recruiting_exit_inflight = false;
     }
   }
 
@@ -791,6 +800,7 @@ contract CircleContract with Deployable {
 
   fun _joinWithTicket(msg: Slice) {
     requireOrThrow(self.status == STATUS_RECRUITING, ERR_NOT_RECRUITING);
+    requireOrThrow(!self.recruiting_exit_inflight, ERR_RECRUITING_BUSY);
 
     // Body: wallet:Address exp:uint32 nonce:uint64 sig:bits512
     let wallet = msg.loadAddress();
@@ -1339,7 +1349,7 @@ contract CircleContract with Deployable {
       .storeAddress(myAddress())
       .storeBit(false) // custom_payload = null
       .storeCoins(0) // forward_ton_amount
-      .storeBit(false) // forward_payload in ref
+      .storeBit(true) // forward_payload in ref (Either Cell ^Cell)
       .storeRef(beginCell().endCell())
       .endCell();
 
@@ -1428,6 +1438,7 @@ contract CircleContract with Deployable {
     // mode=3: recruiting exit (cancel join + withdraw deposits)
     if (mode == WITHDRAW_RECRUITING_EXIT) {
       requireOrThrow(self.status == STATUS_RECRUITING, ERR_NOT_RECRUITING);
+      requireOrThrow(!self.recruiting_exit_inflight, ERR_RECRUITING_BUSY);
       let m = self._requireMember(addr);
 
       let amount = m.collateral + m.prefund;
@@ -1436,6 +1447,8 @@ contract CircleContract with Deployable {
       if (amount > 0) {
         // Caller must attach TON to pay gas for outbound jetton transfer (anti-drain).
         requireOrThrow(context().value >= MIN_WITHDRAW_GAS, 980);
+        // Block join/exit races until this refund transfer is confirmed by excesses/bounce.
+        self.recruiting_exit_inflight = true;
       }
 
       let removal = self._removeMemberFromList(addr);
@@ -1573,6 +1586,7 @@ contract CircleContract with Deployable {
         mm.prefund = out.restore_prefund;
         self._setMember(out.owner, mm);
       }
+      self.recruiting_exit_inflight = false;
       return;
     }
   }

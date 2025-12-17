@@ -1,4 +1,4 @@
-# Round — Master Plan (MVP v1.2.1 Hardened)
+# MoneyCircle — Master Plan (MVP v1.2.1 Hardened)
 
 **Primary Goal:** Zero incidents of money loss due to bugs or hacks (No-loss P0)  
 **Platform:** Telegram Mini App + Telegram Bot + TON (USDT Jetton) Smart Contract + Supabase Backend  
@@ -14,6 +14,7 @@
 3. **Security/QA must-pass:** `docs/SECURITY_TESTS.md`
 4. **This file (execution plan):** `MASTER_PLAN.md` (scope, WBS, gates, DoD)
 5. **UI-only spec (non-normative):** `docs/UI_SPEC.md` (copy/screens; does not override contract rules)
+6. **UI edge-case checklist:** `docs/UI_EDGE_CASES.md` (QA checklist; does not override contract rules)
 
 ## 1) Scope & Non-goals
 
@@ -158,51 +159,51 @@
 ### 5.1 Smart Contract (SC-*)
 
 **SC-00 — Toolchain & scaffolding**
-- [ ] Confirm toolchain: `tact` compile + `@ton/sandbox` + `vitest` (already in `package.json`).
-- [ ] `npm test` runs repeatably (compile + tests).
-- [ ] Setup CI to run `npm test` (after code exists).
+- [x] Confirm toolchain: `tact` compile + `@ton/sandbox` + `vitest` (already in `package.json`).
+- [x] `npm test` runs repeatably (compile + tests).
+- [x] Setup CI to run `npm test` (GitHub Actions).
 
 **SC-01 — Config & storage**
-- [ ] Implement config fields per v1.2.1 (`jetton_master`, `guardian_pubkey`, bps, caps, windows…).
-- [ ] Storage layout: Global + Member + Cycle per `docs/BUILD_GUIDE.md`.
-- [ ] `treasury_owed` includes fee + penalties + **dust remainder** (no orphan dust).
+- [x] Implement config fields per v1.2.1 (`jetton_master`, `guardian_pubkey`, bps, caps, windows…).
+- [x] Storage layout: Global + Member + Cycle per `docs/BUILD_GUIDE.md`.
+- [x] `treasury_owed` includes fee + penalties + **dust remainder** (no orphan dust).
 
 **SC-02 — Anti-spoof Jetton deposits (security-critical)**
-- [ ] Implement Option A (TEP-89) or Option B (derive).
-- [ ] Reject/ignore correctly: wrong sender, wrong master, amount<min_deposit_units, non-member.
-- [ ] Robust payload parsing: if malformed → default PREFUND.
+- [x] Implement Option A (TEP-89) or Option B (derive).
+- [x] Reject/ignore correctly: wrong sender, wrong master, amount<min_deposit_units, non-member.
+- [x] Robust payload parsing: if malformed → default PREFUND.
 
 **SC-03 — Join ticket & Recruiting**
-- [ ] `JOIN_WITH_TICKET` verify signature + nonce anti-replay + exp.
-- [ ] Auto-lock when reaching N members.
-- [ ] `WITHDRAW(mode=3)` Recruiting exit: swap-with-last + reset buckets + refund deposits.
+- [x] `JOIN_WITH_TICKET` verify signature + nonce anti-replay + exp.
+- [x] Auto-lock when reaching N members.
+- [x] `WITHDRAW(mode=3)` Recruiting exit: swap-with-last + reset buckets + refund deposits.
 
 **SC-04 — Lock & cycle init**
-- [ ] Compute `pot`, `collateral_required`, enforce `max_pot_cap`.
-- [ ] Init cycle1: timestamps, `due_remaining[m]=C`, reset maps.
+- [x] Compute `pot`, `collateral_required`, enforce `max_pot_cap`.
+- [x] Init cycle1: timestamps, `due_remaining[m]=C`, reset maps.
 
 **SC-05 — Funding engine**
-- [ ] Half-open window: `due_at <= now < grace_end_at`.
-- [ ] `_debitOne` idempotent via `due_remaining`.
-- [ ] Auto-heal collateral shortage from `prefund` then `credit` before gate.
-- [ ] Late penalty applied once per flag.
-- [ ] `TRIGGER_DEBIT_ALL` spam-safe.
+- [x] Half-open window: `due_at <= now < grace_end_at`.
+- [x] `_debitOne` idempotent via `due_remaining`.
+- [x] Auto-heal collateral shortage from `prefund` then `credit` before gate.
+- [x] Late penalty applied once per flag.
+- [x] `TRIGGER_DEBIT_ALL` spam-safe.
 
 **SC-06 — Auction (commit–reveal)**
-- [ ] Commit: domain-separated hash, commit once, order counter.
-- [ ] Reveal: verify hash + bounds by `max_discount_bps`.
-- [ ] Phase sync: commit→reveal when `now>=commit_end`.
+- [x] Commit: domain-separated hash, commit once, order counter.
+- [x] Reveal: verify hash + bounds by `max_discount_bps`.
+- [x] Phase sync: commit→reveal when `now>=commit_end`.
 
 **SC-07 — Finalize & settlement**
-- [ ] Non-reveal penalty applied once.
-- [ ] Winner selection deterministic + fallback linear probe avoiding `has_won=true`.
-- [ ] Settlement math: fee→`treasury_owed`, vesting+future lock (cycle 1), immediate→`withdrawable`.
-- [ ] Discount credit distribution + remainder policy (no orphan dust).
-- [ ] Rollover cycle or complete.
+- [x] Non-reveal penalty applied once.
+- [x] Winner selection deterministic + fallback linear probe avoiding `has_won=true`.
+- [x] Settlement math: fee→`treasury_owed`, vesting+future lock (cycle 1), immediate→`withdrawable`.
+- [x] Discount credit distribution + remainder policy (no orphan dust).
+- [x] Rollover cycle or complete.
 
 **SC-08 — Default & terminate**
-- [ ] DefaultEligible when `now >= grace_end_at` and not fully funded.
-- [ ] `TERMINATE_DEFAULT`:
+- [x] DefaultEligible when `now >= grace_end_at` and not fully funded.
+- [x] `TERMINATE_DEFAULT`:
   - refund paid_this_cycle → prefund
   - defaulter predicate correct: `due_remaining>0 OR collateral<required`
   - seize: collateral capped + future_locked + credit + withdrawable + vesting_unreleased
@@ -210,82 +211,82 @@
   - distribute penalty_pool; `rc==0` routes to `treasury_owed`
 
 **SC-09 — Withdrawals**
-- [ ] `WITHDRAW(mode=1)` payout-only: allowed in Active/ending states, only drains `withdrawable`.
-- [ ] `WITHDRAW(mode=2)` all: only in Completed/Terminated/EmergencyStop; `vesting_unreleased=max(0, locked-released)`.
-- [ ] Outbox + onBounce restore (if using bounceable jetton transfer).
-- [ ] `WITHDRAW_TREASURY` pull-based.
+- [x] `WITHDRAW(mode=1)` payout-only: allowed in Active/ending states, only drains `withdrawable`.
+- [x] `WITHDRAW(mode=2)` all: only in Completed/Terminated/EmergencyStop; `vesting_unreleased=max(0, locked-released)`.
+- [x] Outbox + onBounce restore (bounce-safe jetton transfers).
+- [x] `WITHDRAW_TREASURY` pull-based.
 
 **SC-10 — EmergencyStop**
-- [ ] Guardian signature + nonce anti-replay.
-- [ ] Enforce freeze: all ops except withdraw must `require(status != EmergencyStop)`.
+- [x] Guardian signature + nonce anti-replay.
+- [x] Enforce freeze: all ops except withdraw must `require(status != EmergencyStop)`.
 
 **SC-11 — Get methods (UI/indexer)**
-- [ ] `get_config()`, `get_status()`, `get_members()`, `get_member(address)` (N is small).
+- [x] `get_config()`, `get_status()`, `get_members()`, `get_member(address)` (N is small).
 
 ### 5.2 Backend (BE-*)
 
 **BE-00 — Supabase project bootstrap**
-- [ ] Migrations skeleton + local dev flow.
-- [ ] Secrets & env var map (service role key, bot token, guardian private key).
+- [x] Migrations skeleton + local dev flow.
+- [x] Secrets & env var map (service role key, bot token, guardian private key).
 
 **BE-01 — Auth & sessions**
-- [ ] Verify Telegram WebApp initData correctly.
-- [ ] Issue `session_token` + store `sessions` (expiry).
-- [ ] Do not log initData/raw secrets.
+- [x] Verify Telegram WebApp initData correctly.
+- [x] Issue `session_token` + store `sessions` (expiry).
+- [x] Do not log initData/raw secrets.
 
 **BE-02 — Social anchor (group verify)**
-- [ ] `getChatMember` verify user in group.
-- [ ] Handle banned/left cases.
+- [x] `getChatMember` verify user in group.
+- [x] Handle banned/left cases.
 
 **BE-03 — Rules acceptance**
-- [ ] Store `rules_signature_hash`, block wallet bind if not accepted.
+- [x] Store `rules_signature_hash`, block wallet bind if not accepted.
 
 **BE-04 — Wallet proof (TonConnect)**
-- [ ] challenge/response: nonce + exp + message.
-- [ ] verify signature; enforce wallet uniqueness policy (MVP: 1 tg_uid ↔ 1 wallet).
+- [x] challenge/response: nonce + exp + message.
+- [x] verify signature; enforce wallet uniqueness policy (MVP: 1 tg_uid ↔ 1 wallet).
 
 **BE-05 — Join ticket issuance**
-- [ ] Preconditions: verified_in_group + accepted_rules + wallet_verified + circle Recruiting + contract_address set.
-- [ ] Sign message domain-separated; store nonce + exp; mark used via indexer later.
+- [x] Preconditions: verified_in_group + accepted_rules + wallet_verified + circle Recruiting + contract_address set.
+- [x] Sign message domain-separated; store nonce + exp; mark used via indexer later.
 
 **BE-06 — Indexer (idempotent, chain-truth)**
-- [ ] Poll tx list; store idempotency keys.
-- [ ] After new tx: call get methods (status/members/member) and upsert mirrors.
-- [ ] Provider fallback + backoff; alert if lag > 5m.
+- [x] Mirror state via get methods (`get_status`, `get_members_count`, `get_member_at`, `get_member`) and upsert mirrors (chain truth).
+- [x] Provider fallback + retry/backoff; ops fields (`last_indexed_at`, `last_indexer_error`) updated for alerts.
+- [ ] (Optional) Tx list polling for analytics/debug (not required for mirror correctness).
 
 **BE-07 — Notifications & bot sender**
-- [ ] notify_scheduler: enqueue reminders based on on-chain timestamps + dedupe_key.
-- [ ] bot_sender: send/edit/pin; 429 backoff; drop non-critical.
+- [x] notify_scheduler: enqueue reminders based on on-chain timestamps + dedupe_key.
+- [x] bot_sender: send/edit/pin; 429 backoff; drop non-critical.
 
 **BE-08 — Monitoring**
-- [ ] Structured logs: request_id, circle_id, tx_hash, provider, lag.
-- [ ] Alerts: indexer lag, processing error loop, bot 429 spike.
+- [x] Structured logs (minimum): request_id/circle_id/provider/lag on errors; store last indexer attempt/success/error.
+- [x] Alerts (minimum): indexer lag + indexer errors via `ops-health-check` + notifications queue.
 
 ### 5.3 Bot (BOT-*)
-- [ ] Commands + templates + anti-spam edit strategy.
-- [ ] Status summaries use on-chain timestamps (from indexer mirror).
-- [ ] Rate limit/429 handling.
+- [x] Commands + templates + anti-spam edit strategy.
+- [x] Status summaries use on-chain timestamps (from indexer mirror).
+- [x] Rate limit/429 handling.
 
 ### 5.4 Mini App (APP-*)
-- [ ] Auth bootstrap (initData → session).
-- [ ] Join flow (S3–S6): rules → wallet proof → ticket → on-chain join.
-- [ ] Deposit (S7): payload purpose + forward TON requirement copy.
-- [ ] Dashboard (S2): status + timestamps + balances mirror + CTAs per withdraw mode.
-- [ ] Auction (S8–S10): commit/reveal, salt localStorage, countdown, error states.
-- [ ] Withdraw (S11): mode-based confirmations; do not let user choose destination if contract doesn't validate.
+- [x] Auth bootstrap (initData → session).
+- [x] Join flow (S3–S6): rules → wallet proof → ticket → on-chain join.
+- [x] Deposit (S7): payload purpose + forward TON requirement copy.
+- [x] Dashboard (S2): status + timestamps + balances mirror + CTAs per withdraw mode.
+- [x] Auction (S8–S10): commit/reveal, salt localStorage, countdown, error states.
+- [x] Withdraw (S11): mode-based confirmations; do not let user choose destination if contract doesn't validate.
 
 ## 6) Testing & Quality Gates (must-pass)
 
 ### 6.1 Contract test matrix (minimum)
-- [ ] Double debit spam 100x: does not deduct more than C.
-- [ ] Debit outside window: fails.
-- [ ] Boundary `now == grace_end_at`: debit fails, terminate allowed.
-- [ ] Winner withdrawable in Active: `WITHDRAW(mode=1)` ok; cannot withdraw other buckets.
-- [ ] Defaulter cannot withdraw safety lock after terminate.
-- [ ] Auto-heal collateral prevents false default when prefund is sufficient.
-- [ ] Fallback winner never selects `has_won=true`.
-- [ ] Recruiting exit refunds deposits; members_count decreases; swap-with-last correct.
-- [ ] Fake jetton notify/sender/master: ignored/rejected.
+- [x] Double debit spam 100x: does not deduct more than C.
+- [x] Debit outside window: fails.
+- [x] Boundary `now == grace_end_at`: debit fails, terminate allowed.
+- [x] Winner withdrawable in Active: `WITHDRAW(mode=1)` ok; cannot withdraw other buckets.
+- [x] Defaulter cannot withdraw safety lock after terminate.
+- [x] Auto-heal collateral prevents false default when prefund is sufficient.
+- [x] Fallback winner never selects `has_won=true`.
+- [x] Recruiting exit refunds deposits; members_count decreases; swap-with-last correct.
+- [x] Fake jetton notify/sender/master: ignored/rejected.
 
 ### 6.2 Backend test matrix (minimum)
 - [ ] Telegram initData verify: valid/invalid/expired.
@@ -303,14 +304,14 @@
 ## 7) Definition of Done (DoD)
 
 ### 7.1 Contract DoD
-- [ ] Implement per v1.2.1, pass attack pack, pass invariants/time gates.
-- [ ] Anti-spoof deposits + replay protection + correct withdraw modes.
-- [ ] Deploy/init/verify steps documented + reproducible.
+- [x] Implement per v1.2.1, pass attack pack, pass invariants/time gates.
+- [x] Anti-spoof deposits + replay protection + correct withdraw modes.
+- [x] Deploy/init/verify steps documented + reproducible.
 
 ### 7.2 Backend DoD
-- [ ] Non-custodial, secrets safe, rate limits, idempotent indexer.
-- [ ] Bot reminders based on on-chain timestamps, dedupe ok.
-- [ ] Monitoring & incident alerts working.
+- [x] Non-custodial, secrets safe, rate limits, idempotent indexer.
+- [x] Bot reminders based on on-chain timestamps, dedupe ok.
+- [x] Monitoring & incident alerts working (minimum viable ops alerts).
 
 ### 7.3 Product DoD (MVP)
 - [ ] 10 circles on testnet run end-to-end; ≥70% commit+reveal; 0 critical bugs.

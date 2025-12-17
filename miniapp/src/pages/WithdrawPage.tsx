@@ -1,13 +1,15 @@
 import { TonConnectButton, useTonConnectUI, useTonWallet } from "@tonconnect/ui-react";
+import { Address } from "@ton/core";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import type { ApiError, CircleStatusResponse } from "../lib/api";
 import { getCircleStatus } from "../lib/api";
 import { useAuth } from "../auth/useAuth";
-import { buildWithdrawPayload, toNano } from "../lib/tonPayloads";
+import { buildInitJettonWalletPayload, buildWithdrawPayload, toNano } from "../lib/tonPayloads";
 import { Page } from "../components/layout/Page";
 import { FundsBanner } from "../components/mc/FundsBanner";
+import { IndexerLagBanner } from "../components/mc/IndexerLagBanner";
 import { OnChainScheduleCard } from "../components/mc/OnChainScheduleCard";
 import { Button } from "../components/ui/Button";
 import { Card, CardDescription, CardTitle } from "../components/ui/Card";
@@ -61,17 +63,28 @@ export function WithdrawPage() {
 
   const allowed: WithdrawMode[] = useMemo(() => {
     if (!circle) return [];
+    const isOnchainJoined = String(member?.join_status ?? "") === "onchain_joined";
     if (circle.status === "Recruiting") {
-      const isOnchainJoined = String(member?.join_status ?? "") === "onchain_joined";
-      const hasDeposits = toBigIntSafe(member?.collateral) + toBigIntSafe(member?.prefund) > 0n;
-      return isOnchainJoined && hasDeposits ? [3] : [];
+      return isOnchainJoined ? [3] : [];
     }
     if (circle.status === "Active") {
       const w = toBigIntSafe(member?.withdrawable);
-      return w > 0n ? [1] : [];
+      return isOnchainJoined && w > 0n ? [1] : [];
     }
     if (circle.status === "Completed" || circle.status === "Terminated" || circle.status === "EmergencyStop") {
-      return [2];
+      const vestingUnreleased = (() => {
+        const locked = toBigIntSafe(member?.vesting_locked);
+        const released = toBigIntSafe(member?.vesting_released);
+        return locked > released ? locked - released : 0n;
+      })();
+      const totalAll =
+        toBigIntSafe(member?.collateral) +
+        toBigIntSafe(member?.prefund) +
+        toBigIntSafe(member?.credit) +
+        toBigIntSafe(member?.withdrawable) +
+        toBigIntSafe(member?.future_locked) +
+        vestingUnreleased;
+      return isOnchainJoined && totalAll > 0n ? [2] : [];
     }
     return [];
   }, [circle, member]);
@@ -80,6 +93,16 @@ export function WithdrawPage() {
     if (!wallet) {
       setError({ code: "WALLET_NOT_CONNECTED", message: "Connect wallet first." });
       return;
+    }
+    try {
+      const connected = String(wallet.account.address ?? "");
+      const bound = String(member?.wallet_address ?? "");
+      if (connected && bound && !Address.parse(connected).equals(Address.parse(bound))) {
+        setError({ code: "WALLET_MISMATCH", message: "Switch to your bound wallet and retry." });
+        return;
+      }
+    } catch {
+      // If parsing fails, proceed and let the contract reject (safest behavior).
     }
     if (!circle?.contract_address) {
       setError({ code: "CONTRACT_NOT_READY", message: "Contract address is not attached yet." });
@@ -92,7 +115,12 @@ export function WithdrawPage() {
         mode === 1
           ? "This will withdraw only your Withdrawable Now amount. Other funds remain locked by rules."
           : mode === 3
-            ? "This will exit the circle and refund your deposits. You will no longer be a participant."
+            ? (() => {
+                const dep = toBigIntSafe(member?.collateral) + toBigIntSafe(member?.prefund);
+                return dep > 0n
+                  ? "This will exit the circle and refund your deposits. You will no longer be a participant."
+                  : "This will exit the circle. You have no deposits to refund, and you will no longer be a participant.";
+              })()
             : "This will withdraw all remaining balances.";
       if (!window.confirm(confirmCopy)) {
         setBusy(null);
@@ -123,6 +151,7 @@ export function WithdrawPage() {
     <Page title="Withdraw">
       <div className="space-y-4">
         <FundsBanner />
+        <IndexerLagBanner circle={circle} />
 
         <div className="flex items-center justify-between gap-3">
           <Link to={`/circle/${circleId}`} className="text-sm text-slate-300 hover:text-slate-50">
@@ -147,6 +176,44 @@ export function WithdrawPage() {
             <CardDescription className="mt-1">
               Status: {circle.status} · Contract: <code className="text-slate-200">{circle.contract_address ?? "(not attached yet)"}</code>
             </CardDescription>
+
+            {circle.contract_address && !circle.onchain_jetton_wallet ? (
+              <div className="mt-4">
+                <Button
+                  variant="ghost"
+                  onClick={async () => {
+                    if (!wallet) {
+                      setError({ code: "WALLET_NOT_CONNECTED", message: "Connect wallet first." });
+                      return;
+                    }
+                    if (!window.confirm("Initialize the contract Jetton wallet (required once)?")) return;
+                    setBusy("Sending INIT…");
+                    setError(null);
+                    try {
+                      await tonConnectUI.sendTransaction({
+                        validUntil: Math.floor(Date.now() / 1000) + 5 * 60,
+                        messages: [
+                          {
+                            address: String(circle.contract_address),
+                            amount: toNano("0.05"),
+                            payload: buildInitJettonWalletPayload()
+                          }
+                        ]
+                      });
+                    } catch (e: unknown) {
+                      const err = e as { message?: string };
+                      setError({ code: "TX_FAILED", message: err?.message ?? "Transaction failed" });
+                    } finally {
+                      setBusy(null);
+                      await refresh();
+                    }
+                  }}
+                  disabled={!!busy}
+                >
+                  Init Jetton Wallet (required once)
+                </Button>
+              </div>
+            ) : null}
           </Card>
         ) : (
           <Card>
